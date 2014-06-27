@@ -21,3 +21,8 @@ include_directories(include)
 # Netmeasured binary
 add_executable(netmeasured ${SOURCES})
 target_link_libraries(netmeasured ${LIBS})
+
+install(TARGETS netmeasured
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+)
