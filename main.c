@@ -26,6 +26,9 @@
 #include <sys/types.h>
 #include <stdlib.h>
 
+#include <netmeasured/listener.h>
+#include <netmeasured/probe.h>
+
 /* Global ubus connection context */
 static struct ubus_context *ubus;
 /* Global UCI context */
@@ -81,7 +84,17 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  /* TODO */
+  /* Initialize the listener */
+  if (nm_listener_init(uci, ubus) != 0) {
+    fprintf(stderr, "ERROR: Failed to initialize listener!\n");
+    return -1;
+  }
+
+  /* Initialize the probes */
+  if (nm_probe_init(uci, ubus) != 0) {
+    fprintf(stderr, "ERROR: Failed to initialize probes!\n");
+    return -1;
+  }
 
   /* Enter the event loop */
   uloop_run();

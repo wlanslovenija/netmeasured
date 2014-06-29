@@ -7,6 +7,8 @@ set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
 
 set(SOURCES
   main.c
+  listener.c
+  probe.c
 )
 
 set(LIBS
