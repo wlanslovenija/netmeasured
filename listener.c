@@ -19,6 +19,7 @@
 #include <netmeasured/listener.h>
 
 #include <libubox/usock.h>
+#include <sys/socket.h>
 #include <syslog.h>
 
 /* Listener socket (currently only one is supported) */
@@ -26,7 +27,18 @@ static struct uloop_fd listener_sock;
 
 static void nm_listener_handler(struct uloop_fd *fd, unsigned int events)
 {
-  /* TODO: Extract sequence number and transmit a reply back. */
+  struct sockaddr_storage peer_addr;
+  socklen_t peer_addr_len;
+
+  /* Read the probe */
+  char probe_data[1024] = {0, };
+  size_t bytes = recvfrom(fd->fd, probe_data, sizeof(probe_data), 0,
+    (struct sockaddr*) &peer_addr, &peer_addr_len);
+  if (bytes <= 0)
+    return;
+
+  /* Transmit the same probe back */
+  sendto(fd->fd, probe_data, bytes, 0, (struct sockaddr*) &peer_addr, peer_addr_len);
 }
 
 static void nm_start_listener(const char *address, const char *port)
@@ -39,6 +51,7 @@ static void nm_start_listener(const char *address, const char *port)
   }
 
   uloop_fd_add(&listener_sock, ULOOP_READ);
+  syslog(LOG_INFO, "Started listener on '%s:%s'.", address, port);
 }
 
 int nm_listener_init(struct uci_context *uci, struct ubus_context *ubus)
