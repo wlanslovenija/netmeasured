@@ -18,14 +18,17 @@
  */
 #include <netmeasured/probe.h>
 
-#include <libubox/list.h>
+#include <libubox/avl.h>
+#include <libubox/avl-cmp.h>
 #include <libubox/usock.h>
 #include <sys/socket.h>
 #include <syslog.h>
 
 struct nm_probe {
-  /* List head */
-  struct list_head list;
+  /* Probe AVL node */
+  struct avl_node avl;
+  /* Probe name */
+  char *name;
   /* Number of probes sent */
   size_t stats_probes_sent;
   /* Number of probes received */
@@ -38,8 +41,8 @@ struct nm_probe {
   struct uloop_fd sock;
 };
 
-/* A list of active probes */
-static LIST_HEAD(probes);
+/* AVL tree containing all registered probes with probe name as their key */
+static struct avl_tree probe_registry;
 
 static void nm_probe_handler(struct uloop_fd *fd, unsigned int events)
 {
@@ -69,14 +72,15 @@ static void nm_probe_run(struct uloop_timeout *timeout)
   uloop_timeout_set(&probe->sched_timeout, probe->interval);
 }
 
-static void nm_create_probe(const char *address, const char *port, int interval)
+static void nm_create_probe(const char *name, const char *address, const char *port, int interval)
 {
   /* Register the probe */
   struct nm_probe *probe = (struct nm_probe*) malloc(sizeof(struct nm_probe));
   if (!probe) {
-    syslog(LOG_ERR, "Failed to create probe entry '%s:%s'.", address, port);
+    syslog(LOG_ERR, "Failed to create probe entry '%s' (%s:%s).", name, address, port);
     return;
   }
+  probe->name = strdup(name);
   probe->interval = interval;
   probe->stats_probes_sent = 0;
   probe->stats_probes_rcvd = 0;
@@ -85,13 +89,20 @@ static void nm_create_probe(const char *address, const char *port, int interval)
   probe->sock.cb = &nm_probe_handler;
   probe->sock.fd = usock(USOCK_UDP, address, port);
   if (probe->sock.fd < 0) {
+    free(probe->name);
     free(probe);
-    syslog(LOG_ERR, "Failed to initialize probe '%s:%s'.", address, port);
+    syslog(LOG_ERR, "Failed to initialize probe '%s' (%s:%s).", name, address, port);
     return;
   }
 
-  /* Register the probe */
-  list_add(&probe->list, &probes);
+  /* Register probe in our probe registry */
+  probe->avl.key = probe->name;
+  if (avl_insert(&probe_registry, &probe->avl) != 0) {
+    free(probe->name);
+    free(probe);
+    syslog(LOG_WARNING, "Ignoring probe '%s' (%s:%s) because of name conflict!", name, address, port);
+    return;
+  }
 
   uloop_fd_add(&probe->sock, ULOOP_READ);
 
@@ -99,11 +110,14 @@ static void nm_create_probe(const char *address, const char *port, int interval)
   probe->sched_timeout.cb = nm_probe_run;
   uloop_timeout_set(&probe->sched_timeout, interval);
 
-  syslog(LOG_INFO, "Created probe '%s:%s', interval %d msec.", address, port, interval);
+  syslog(LOG_INFO, "Created probe '%s' (%s:%s, interval %d msec).", name, address, port, interval);
 }
 
 int nm_probe_init(struct uci_context *uci, struct ubus_context *ubus)
 {
+  /* Initialize the probe registry */
+  avl_init(&probe_registry, avl_strcmp, false, NULL);
+
   /* Get probe configuration */
   struct uci_package *pkg = NULL;
   uci_load(uci, "netmeasured", &pkg);
@@ -115,6 +129,11 @@ int nm_probe_init(struct uci_context *uci, struct ubus_context *ubus)
     struct uci_section *s = uci_to_section(e);
     if (strcmp(s->type, "probe") != 0)
       continue;
+
+    if (s->anonymous) {
+      syslog(LOG_WARNING, "Ignoring anonymous probe UCI section, please name the probe!");
+      continue;
+    }
 
     /* TODO: Extract interface so we can register a hook that will initialize
              the probe only after the interface is brought up by netifd. */
@@ -142,7 +161,7 @@ int nm_probe_init(struct uci_context *uci, struct ubus_context *ubus)
     if (errno != 0 || interval_err == interval)
       continue;
 
-    nm_create_probe(address, port, interval_value);
+    nm_create_probe(s->e.name, address, port, interval_value);
     break;
   }
 
