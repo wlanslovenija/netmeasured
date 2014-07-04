@@ -121,8 +121,10 @@ int nm_probe_init(struct uci_context *uci, struct ubus_context *ubus)
   /* Get probe configuration */
   struct uci_package *pkg = NULL;
   uci_load(uci, "netmeasured", &pkg);
-  if (!pkg)
+  if (!pkg) {
+    syslog(LOG_ERR, "Missing netmeasured UCI configuration.");
     return -1;
+  }
 
   struct uci_element *e;
   uci_foreach_element(&pkg->sections, e) {
