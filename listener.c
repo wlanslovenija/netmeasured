@@ -57,8 +57,9 @@ static void nm_start_listener(const char *address, const char *port)
 int nm_listener_init(struct uci_context *uci, struct ubus_context *ubus)
 {
   /* Get listener configuration */
-  struct uci_package *pkg = NULL;
-  uci_load(uci, "netmeasured", &pkg);
+  struct uci_package *pkg = uci_lookup_package(uci, "netmeasured");
+  if (!pkg)
+    uci_load(uci, "netmeasured", &pkg);
   if (!pkg) {
     syslog(LOG_ERR, "Missing netmeasured UCI configuration.");
     return -1;

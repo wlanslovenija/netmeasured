@@ -119,8 +119,9 @@ int nm_probe_init(struct uci_context *uci, struct ubus_context *ubus)
   avl_init(&probe_registry, avl_strcmp, false, NULL);
 
   /* Get probe configuration */
-  struct uci_package *pkg = NULL;
-  uci_load(uci, "netmeasured", &pkg);
+  struct uci_package *pkg = uci_lookup_package(uci, "netmeasured");
+  if (!pkg)
+    uci_load(uci, "netmeasured", &pkg);
   if (!pkg) {
     syslog(LOG_ERR, "Missing netmeasured UCI configuration.");
     return -1;
