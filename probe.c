@@ -197,6 +197,7 @@ static int nm_handle_get_probe(struct ubus_context *ctx, struct ubus_object *obj
     blobmsg_add_u32(&reply_buf, "interval", probe->interval);
     blobmsg_add_u32(&reply_buf, "sent", probe->stats_probes_sent);
     blobmsg_add_u32(&reply_buf, "rcvd", probe->stats_probes_rcvd);
+    blobmsg_add_u32(&reply_buf, "loss", probe->stats_probes_sent - probe->stats_probes_rcvd);
     blobmsg_close_table(&reply_buf, c);
   } else {
     /* Iterate through all probes and add them to our reply */
@@ -209,6 +210,7 @@ static int nm_handle_get_probe(struct ubus_context *ctx, struct ubus_object *obj
       blobmsg_add_u32(&reply_buf, "interval", probe->interval);
       blobmsg_add_u32(&reply_buf, "sent", probe->stats_probes_sent);
       blobmsg_add_u32(&reply_buf, "rcvd", probe->stats_probes_rcvd);
+      blobmsg_add_u32(&reply_buf, "loss", probe->stats_probes_sent - probe->stats_probes_rcvd);
       blobmsg_close_table(&reply_buf, c);
     }
   }
