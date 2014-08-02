@@ -42,7 +42,7 @@ Parameters ``sent`` and ``rcvd`` specify the number of probes sent and the numbe
 probes successfully received.
 
 The next method, ``reset_probe`` can be used to reset probe statistics and start a new
-measurement. In this case, the ``probe`` argument is mandatory:::
+measurement. In this case, the ``probe`` argument is mandatory::
 
   $ ubus call netmeasured reset_probe "{ 'probe': 'ping0' }"
   {
