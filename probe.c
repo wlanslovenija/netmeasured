@@ -81,6 +81,12 @@ static void nm_probe_handler(struct uloop_fd *fd, unsigned int events)
 
   /* Extract the probe where the event occurred */
   probe = container_of(fd, struct nm_probe, sock);
+
+  if (fd->error) {
+    fd->error = false;
+    return;
+  }
+
   /* Read the probe */
   unsigned char probe_data[128] = {0, };
   if (recv(probe->sock.fd, probe_data, sizeof(probe_data), 0) > 0) {
@@ -140,7 +146,7 @@ static void nm_create_probe(const char *name, const char *address, const char *p
     return;
   }
 
-  uloop_fd_add(&probe->sock, ULOOP_READ);
+  uloop_fd_add(&probe->sock, ULOOP_READ | ULOOP_ERROR_CB);
 
   /* Schedule the probe */
   probe->sched_timeout.cb = nm_probe_run;
