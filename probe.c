@@ -22,6 +22,7 @@
 #include <libubox/avl-cmp.h>
 #include <libubox/usock.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #include <syslog.h>
 
 struct nm_probe {
@@ -29,6 +30,10 @@ struct nm_probe {
   struct avl_node avl;
   /* Probe name */
   char *name;
+  /* Destination address */
+  char *address;
+  /* Destination port */
+  char *port;
   /* Number of probes sent */
   size_t stats_probes_sent;
   /* Number of probes received */
@@ -103,14 +108,45 @@ static void nm_probe_run(struct uloop_timeout *timeout)
 
   /* Extract the probe where the timeout ocurred */
   probe = container_of(timeout, struct nm_probe, sched_timeout);
-  /* Initiate probe */
-  unsigned char probe_data[128] = {0, };
-  put_u64(probe_data, probe->seqno);
-  if (send(probe->sock.fd, probe_data, sizeof(probe_data), 0) > 0) {
-    probe->stats_probes_sent++;
+
+
+  /* If a large number of probes have failed, reinitialize the socket */
+  if (probe->sock.fd < 0 || (probe->stats_probes_sent > 10 && !probe->stats_probes_rcvd)) {
+    if (probe->sock.fd > 0) {
+      uloop_fd_delete(&probe->sock);
+      close(probe->sock.fd);
+    }
+
+    probe->sock.fd = usock(USOCK_UDP, probe->address, probe->port);
+    if (probe->sock.fd < 0) {
+      syslog(LOG_ERR, "Failed to reinitialize probe '%s' (%s:%s).", probe->name, probe->address, probe->port);
+    } else {
+      uloop_fd_add(&probe->sock, ULOOP_READ | ULOOP_ERROR_CB);
+    }
   }
+
+  /* Initiate probe */
+  if (probe->sock.fd > 0) {
+    unsigned char probe_data[128] = {0, };
+    put_u64(probe_data, probe->seqno);
+    if (send(probe->sock.fd, probe_data, sizeof(probe_data), 0) > 0) {
+      probe->stats_probes_sent++;
+    }
+  }
+
   /* Reschedule probe */
   uloop_timeout_set(&probe->sched_timeout, probe->interval);
+}
+
+static void nm_free_probe(struct nm_probe *probe)
+{
+  if (!probe)
+    return;
+
+  free(probe->name);
+  free(probe->address);
+  free(probe->port);
+  free(probe);
 }
 
 static void nm_create_probe(const char *name, const char *address, const char *port, int interval)
@@ -122,6 +158,8 @@ static void nm_create_probe(const char *name, const char *address, const char *p
     return;
   }
   probe->name = strdup(name);
+  probe->address = strdup(address);
+  probe->port = strdup(port);
   probe->interval = interval;
   probe->stats_probes_sent = 0;
   probe->stats_probes_rcvd = 0;
@@ -131,8 +169,7 @@ static void nm_create_probe(const char *name, const char *address, const char *p
   probe->sock.cb = &nm_probe_handler;
   probe->sock.fd = usock(USOCK_UDP, address, port);
   if (probe->sock.fd < 0) {
-    free(probe->name);
-    free(probe);
+    nm_free_probe(probe);
     syslog(LOG_ERR, "Failed to initialize probe '%s' (%s:%s).", name, address, port);
     return;
   }
@@ -140,8 +177,7 @@ static void nm_create_probe(const char *name, const char *address, const char *p
   /* Register probe in our probe registry */
   probe->avl.key = probe->name;
   if (avl_insert(&probe_registry, &probe->avl) != 0) {
-    free(probe->name);
-    free(probe);
+    nm_free_probe(probe);
     syslog(LOG_WARNING, "Ignoring probe '%s' (%s:%s) because of name conflict!", name, address, port);
     return;
   }
